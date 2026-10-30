@@ -1,0 +1,54 @@
+{{- $ctx := dict "name" "web" "root" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  type: NodePort
+  selector:
+    {{- include "pa.selector" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: {{ .Values.web.nodePort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "pa.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pa.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: web
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: API_UPSTREAM
+              value: "http://partners-api:4000"
+            - name: OIDC_AUTHORITY
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.oidc.webClientId | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}

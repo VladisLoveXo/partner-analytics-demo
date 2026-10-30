@@ -1,0 +1,45 @@
+{{- if .Values.generator.enabled }}
+{{- $ctx := dict "name" "event-generator" "root" . }}
+# Runs once after the first install: loads the history through Keycloak (client credentials),
+# partners-api (REST) and stats-service (gRPC) into ClickHouse. A failure fails the install.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: event-generator
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    # The finished Job stays for `kubectl logs job/event-generator` until the next install replaces it.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "pa.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: event-generator
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: API_URL
+              value: "http://partners-api:4000"
+            - name: TOKEN_URL
+              value: "{{ .Values.oidc.internalUrl }}/protocol/openid-connect/token"
+            - name: CLIENT_ID
+              value: {{ .Values.generator.clientId | quote }}
+            - name: CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: partner-analytics
+                  key: GENERATOR_CLIENT_SECRET
+            - name: BACKFILL_DAYS
+              value: {{ .Values.generator.backfillDays | quote }}
+            - name: LIVE
+              value: "false"
+          {{- include "pa.nodeSecurity" . | nindent 10 }}
+{{- end }}

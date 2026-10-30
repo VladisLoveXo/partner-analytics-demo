@@ -1,0 +1,60 @@
+image:
+  # Images are built locally and loaded into kind (scripts/kind-up.sh), nothing is pulled.
+  repository: partner-analytics
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+oidc:
+  # Public realm URL: the browser logs in here and it is the `iss` claim partners-api expects.
+  issuer: http://localhost:8180/realms/partners
+  # In-cluster realm URL for signing keys and service tokens.
+  internalUrl: http://keycloak.infra.svc.cluster.local:8080/realms/partners
+  audience: partners-api
+  webClientId: partners-web
+
+postgres:
+  url: postgres://app:app@postgres.infra.svc.cluster.local:5432/partners
+
+clickhouse:
+  url: http://clickhouse.infra.svc.cluster.local:8123
+  user: app
+  password: app
+
+redis:
+  url: redis://redis.infra.svc.cluster.local:6379
+
+partnersApi:
+  replicas: 2
+  seedDemo: true
+  rateLimitPerMinute: 300
+  ingestRateLimitPerMinute: 1200
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }
+
+statsService:
+  replicas: 2
+  # GOAWAY to connections older than this, so gRPC traffic spreads over new replicas.
+  maxConnectionAgeMs: 300000
+  # Fault injection for demos of retries: share of calls answered with UNAVAILABLE, extra latency.
+  chaos:
+    unavailableRate: "0"
+    delayMs: "0"
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }
+
+web:
+  replicas: 1
+  # Mapped to localhost:8081 by deploy/kind/cluster.yaml.
+  nodePort: 30081
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+generator:
+  # A post-install hook Job that loads the last N days of traffic through the public API.
+  enabled: true
+  backfillDays: 30
+  clientId: event-generator
+  clientSecret: event-generator-secret

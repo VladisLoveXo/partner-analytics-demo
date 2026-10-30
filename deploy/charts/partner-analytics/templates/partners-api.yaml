@@ -1,0 +1,97 @@
+{{- $ctx := dict "name" "partners-api" "root" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: partners-api
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "pa.selector" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: partners-api
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.partnersApi.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "pa.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pa.labels" $ctx | nindent 8 }}
+      annotations:
+        {{- include "pa.secretChecksum" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 20
+      # Replicas starting together are serialized by a PostgreSQL advisory lock inside migrate.js.
+      initContainers:
+        - name: migrate
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/migrate.js"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: partner-analytics
+                  key: DATABASE_URL
+            - name: SEED_DEMO
+              value: {{ .Values.partnersApi.seedDemo | quote }}
+          {{- include "pa.nodeSecurity" . | nindent 10 }}
+      containers:
+        - name: partners-api
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: partner-analytics
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            - name: STATS_URL
+              value: "http://stats-service:50051"
+            - name: OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            - name: OIDC_JWKS_URL
+              value: "{{ .Values.oidc.internalUrl }}/protocol/openid-connect/certs"
+            - name: RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.partnersApi.rateLimitPerMinute | quote }}
+            - name: INGEST_RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.partnersApi.ingestRateLimitPerMinute | quote }}
+            - name: SHUTDOWN_DRAIN_MS
+              value: "3000"
+          ports:
+            - name: http
+              containerPort: 4000
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.partnersApi.resources | nindent 12 }}
+          {{- include "pa.nodeSecurity" . | nindent 10 }}

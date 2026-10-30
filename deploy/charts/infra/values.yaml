@@ -1,0 +1,25 @@
+postgres:
+  image: postgres:18-alpine
+  user: app
+  password: app
+  database: partners
+  storage: 1Gi
+
+clickhouse:
+  image: clickhouse/clickhouse-server:26.8-alpine
+  user: app
+  password: app
+  storage: 2Gi
+
+redis:
+  image: redis:7.4-alpine
+
+keycloak:
+  image: quay.io/keycloak/keycloak:26.8
+  adminPassword: admin
+  # Public URL the browser uses: it becomes the issuer of every token.
+  hostname: http://localhost:8180
+  nodePort: 30180
+  # Realm export, passed at install time:
+  #   --set-file keycloak.realm=infra/keycloak/realm-partners.json
+  realm: ""

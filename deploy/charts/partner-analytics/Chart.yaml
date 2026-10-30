@@ -1,0 +1,8 @@
+apiVersion: v2
+name: partner-analytics
+description: >-
+  Partner analytics demo: partners-api (REST, OIDC, Redis), stats-service (gRPC, ClickHouse)
+  and web (React SPA behind nginx). One release per namespace.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

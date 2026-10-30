@@ -1,0 +1,8 @@
+apiVersion: v2
+name: infra
+description: >-
+  Dev-only dependencies for the kind demo: PostgreSQL, ClickHouse, Redis and Keycloak.
+  In production these are managed services and the company identity provider.
+type: application
+version: 0.1.0
+appVersion: "dev"

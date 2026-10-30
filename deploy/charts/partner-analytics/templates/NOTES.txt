@@ -1,0 +1,10 @@
+Partner analytics is installed in namespace {{ .Release.Namespace }}.
+
+  UI:        http://localhost:8081   (kind maps NodePort {{ .Values.web.nodePort }} to this port)
+  Keycloak:  {{ .Values.oidc.issuer }}
+  Users:     alpha / alpha, beta / beta (partners), admin / admin (admin)
+
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} logs deploy/stats-service
+  kubectl -n {{ .Release.Namespace }} logs job/event-generator
+  helm -n {{ .Release.Namespace }} history {{ .Release.Name }}

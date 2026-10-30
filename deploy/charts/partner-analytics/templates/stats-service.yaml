@@ -1,0 +1,73 @@
+{{- $ctx := dict "name" "stats-service" "root" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: stats-service
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "pa.selector" $ctx | nindent 4 }}
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      appProtocol: kubernetes.io/h2c
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stats-service
+  labels:
+    {{- include "pa.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.statsService.replicas }}
+  # A new pod has to become ready before an old one goes away: a broken release never takes the service down.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "pa.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pa.labels" $ctx | nindent 8 }}
+      annotations:
+        {{- include "pa.secretChecksum" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 20
+      # ClickHouse DDL is idempotent (IF NOT EXISTS), so every replica may run it.
+      initContainers:
+        - name: migrate
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/migrate.js"]
+          env:
+            {{- include "pa.statsEnv" . | nindent 12 }}
+          {{- include "pa.nodeSecurity" . | nindent 10 }}
+      containers:
+        - name: stats-service
+          image: {{ include "pa.image" $ctx }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- include "pa.statsEnv" . | nindent 12 }}
+          ports:
+            - name: grpc
+              containerPort: 50051
+          # Native gRPC probes call grpc.health.v1.Health/Check. The server answers NOT_SERVING
+          # as soon as it starts shutting down, so the pod leaves the Service before it stops.
+          readinessProbe:
+            grpc:
+              port: 50051
+            periodSeconds: 5
+          livenessProbe:
+            grpc:
+              port: 50051
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.statsService.resources | nindent 12 }}
+          {{- include "pa.nodeSecurity" . | nindent 10 }}

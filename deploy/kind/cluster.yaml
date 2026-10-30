@@ -1,0 +1,15 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: partner-analytics
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Web UI: http://localhost:8081 (Service web, NodePort 30081)
+      - containerPort: 30081
+        hostPort: 8081
+        protocol: TCP
+      # Keycloak: http://localhost:8180 (Service keycloak, NodePort 30180).
+      # The browser and partners-api agree on this URL as the token issuer.
+      - containerPort: 30180
+        hostPort: 8180
+        protocol: TCP
