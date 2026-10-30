@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Protobuf lint
+        run: npm run proto:lint
+      - name: Generated code matches the proto
+        run: |
+          npm run proto:generate
+          git diff --exit-code -- services/*/src/gen
+      - name: Typecheck
+        run: npm run typecheck
+      # Integration tests start PostgreSQL, ClickHouse and Redis with Testcontainers on the runner's Docker.
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  helm:
+    name: Helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.1
+      - run: helm lint deploy/charts/infra --set-file keycloak.realm=infra/keycloak/realm-partners.json
+      - run: helm lint deploy/charts/partner-analytics
+      - run: helm template partner-analytics deploy/charts/partner-analytics > /dev/null
+
+  kind:
+    name: Install into kind
+    needs: [checks, helm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.1
+      - uses: helm/kind-action@v1
+        with:
+          config: deploy/kind/cluster.yaml
+          cluster_name: partner-analytics
+      # Builds the images, loads them into the cluster and installs both charts with --wait.
+      # The post-install Job loads traffic through Keycloak, REST and gRPC; if it fails, the install fails.
+      - name: Install
+        run: bash scripts/kind-up.sh
+      - name: Smoke test
+        run: bash scripts/smoke.sh
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n partner-analytics describe pods
+          kubectl -n partner-analytics logs deploy/partners-api --all-containers --tail=100 || true
+          kubectl -n partner-analytics logs deploy/stats-service --all-containers --tail=100 || true
+          kubectl -n partner-analytics logs job/event-generator --tail=100 || true
+          kubectl -n infra logs deploy/keycloak --tail=100 || true
