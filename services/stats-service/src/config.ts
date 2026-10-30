@@ -7,6 +7,7 @@ const schema = z.object({
   CLICKHOUSE_PASSWORD: z.string().default(""),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   SHUTDOWN_DRAIN_MS: z.coerce.number().int().min(0).default(0),
+  MAX_CONNECTION_AGE_MS: z.coerce.number().int().min(0).default(0),
   CHAOS_UNAVAILABLE_RATE: z.coerce.number().min(0).max(1).default(0),
   CHAOS_DELAY_MS: z.coerce.number().int().min(0).default(0),
 });
@@ -19,6 +20,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     port: parsed.PORT,
     logLevel: parsed.LOG_LEVEL,
     shutdownDrainMs: parsed.SHUTDOWN_DRAIN_MS,
+    maxConnectionAgeMs: parsed.MAX_CONNECTION_AGE_MS,
     clickhouse: {
       url: parsed.CLICKHOUSE_URL,
       username: parsed.CLICKHOUSE_USER,

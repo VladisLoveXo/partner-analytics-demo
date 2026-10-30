@@ -15,6 +15,8 @@ export interface GrpcServerDeps {
   health: HealthState;
   log: Logger;
   chaos?: ChaosOptions;
+  /** Gracefully closes connections older than this; 0 keeps them forever. */
+  maxConnectionAgeMs?: number;
 }
 
 export interface CloseOptions {
@@ -27,6 +29,8 @@ export interface CloseOptions {
 export interface GrpcServer {
   listen(port: number, host?: string): Promise<number>;
   close(options?: CloseOptions): Promise<void>;
+  /** HTTP/2 connections accepted since start. */
+  connectionsOpened(): number;
 }
 
 /** gRPC over cleartext HTTP/2 (h2c). Connect serves gRPC, gRPC-Web and Connect protocols on one port. */
@@ -48,13 +52,34 @@ export function createGrpcServer(deps: GrpcServerDeps): GrpcServer {
   });
 
   const server = createServer(handler);
-  const sessions = new Set<ServerHttp2Session>();
+  const sessions = new Map<ServerHttp2Session, number>();
+  let opened = 0;
   server.on("session", (session) => {
-    sessions.add(session);
+    opened++;
+    sessions.set(session, Date.now());
     session.once("close", () => sessions.delete(session));
   });
 
+  // kube-proxy balances TCP connections, not requests, and a gRPC client keeps one HTTP/2 connection
+  // for hours, so a new replica would get no traffic. A GOAWAY after the age limit makes the client
+  // reconnect, and the new connection may land on another pod. In-flight calls finish normally.
+  const maxAgeMs = deps.maxConnectionAgeMs ?? 0;
+  const ageTimer =
+    maxAgeMs > 0
+      ? setInterval(
+          () => {
+            const now = Date.now();
+            for (const [session, openedAt] of sessions) {
+              if (now - openedAt >= maxAgeMs && !session.closed) session.close();
+            }
+          },
+          Math.min(maxAgeMs, 30_000),
+        ).unref()
+      : undefined;
+
   return {
+    connectionsOpened: () => opened,
+
     listen(port, host = "0.0.0.0") {
       return new Promise((resolve, reject) => {
         server.once("error", reject);
@@ -63,14 +88,15 @@ export function createGrpcServer(deps: GrpcServerDeps): GrpcServer {
     },
 
     async close({ drainMs = 0, graceMs = 10_000 } = {}) {
+      clearInterval(ageTimer);
       deps.health.serving = false;
       if (drainMs > 0) await sleep(drainMs);
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       // GOAWAY: clients finish in-flight calls and open new ones on another instance.
-      for (const session of sessions) session.close();
+      for (const session of sessions.keys()) if (!session.closed) session.close();
       const forceTimer = setTimeout(() => {
         shutdown.abort();
-        for (const session of sessions) session.destroy();
+        for (const session of sessions.keys()) session.destroy();
       }, graceMs);
       await closed;
       clearTimeout(forceTimer);

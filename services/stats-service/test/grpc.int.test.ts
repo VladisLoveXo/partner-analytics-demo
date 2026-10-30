@@ -125,6 +125,30 @@ describe("reads", () => {
   });
 });
 
+describe("connection age limit", () => {
+  it("closes old connections gracefully and the client reconnects on its own", async () => {
+    const aging = createGrpcServer({
+      repo: createEventsRepo(ch.client),
+      health: createHealthState(),
+      log: pino({ level: "silent" }),
+      maxConnectionAgeMs: 200,
+    });
+    const port = await aging.listen(0, "127.0.0.1");
+    const client = createClient(StatsService, createGrpcTransport({ baseUrl: `http://127.0.0.1:${port}` }));
+    try {
+      await client.listPartnerTotals({ from: "2026-01-01", to: "2026-01-02" });
+      // Long enough for the server to send GOAWAY on the first connection.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const second = await client.listPartnerTotals({ from: "2026-01-01", to: "2026-01-02" });
+
+      expect(second.partners).toEqual([]);
+      expect(aging.connectionsOpened()).toBe(2);
+    } finally {
+      await aging.close({ graceMs: 1_000 });
+    }
+  });
+});
+
 describe("health", () => {
   it("reports SERVING, then NOT_SERVING once shutdown starts", async () => {
     expect((await healthClient.check({})).status).toBe(ServingStatus.SERVING);

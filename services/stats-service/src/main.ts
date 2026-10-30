@@ -13,6 +13,7 @@ const server = createGrpcServer({
   health: createHealthState(),
   log,
   chaos: config.chaos,
+  maxConnectionAgeMs: config.maxConnectionAgeMs,
 });
 
 const port = await server.listen(config.port);
