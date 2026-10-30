@@ -1,0 +1,157 @@
+name: partner-analytics
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: partners
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d partners"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8-alpine
+    environment:
+      CLICKHOUSE_USER: app
+      CLICKHOUSE_PASSWORD: app
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    ports:
+      - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # The browser reaches Keycloak at this URL, so it becomes the issuer of every token.
+      # Containers call keycloak:8080 directly; the backchannel follows the request host.
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak/realm-partners.json:/opt/keycloak/data/import/realm-partners.json:ro
+    healthcheck:
+      # The image has no curl: plain HTTP over bash /dev/tcp to the management port.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  stats-service:
+    build:
+      context: .
+      dockerfile: services/stats-service/Dockerfile
+    image: partner-analytics/stats-service:dev
+    command: ["sh", "-c", "node dist/migrate.js && exec node dist/main.js"]
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: app
+      CLICKHOUSE_PASSWORD: app
+      CHAOS_UNAVAILABLE_RATE: ${CHAOS_UNAVAILABLE_RATE:-0}
+      CHAOS_DELAY_MS: ${CHAOS_DELAY_MS:-0}
+    ports:
+      - "50051:50051"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  partners-api:
+    build:
+      context: .
+      dockerfile: services/partners-api/Dockerfile
+    image: partner-analytics/partners-api:dev
+    command: ["sh", "-c", "node dist/migrate.js && exec node dist/main.js"]
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/partners
+      SEED_DEMO: "true"
+      REDIS_URL: redis://redis:6379
+      STATS_URL: http://stats-service:50051
+      OIDC_ISSUER: http://localhost:8080/realms/partners
+      OIDC_JWKS_URL: http://keycloak:8080/realms/partners/protocol/openid-connect/certs
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stats-service:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: partner-analytics/web:dev
+    environment:
+      API_UPSTREAM: http://partners-api:4000
+      OIDC_AUTHORITY: http://localhost:8080/realms/partners
+      OIDC_CLIENT_ID: partners-web
+    ports:
+      - "3000:8080"
+    depends_on:
+      partners-api:
+        condition: service_healthy
+
+  event-generator:
+    build:
+      context: .
+      dockerfile: tools/event-generator/Dockerfile
+    image: partner-analytics/event-generator:dev
+    environment:
+      API_URL: http://partners-api:4000
+      TOKEN_URL: http://keycloak:8080/realms/partners/protocol/openid-connect/token
+      CLIENT_ID: event-generator
+      CLIENT_SECRET: event-generator-secret
+      BACKFILL_DAYS: "30"
+      LIVE: "true"
+    depends_on:
+      partners-api:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  clickhouse-data:
