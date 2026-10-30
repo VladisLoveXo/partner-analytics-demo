@@ -1,0 +1,29 @@
+{
+  "name": "partner-analytics-demo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "services/stats-service",
+    "services/partners-api",
+    "apps/web",
+    "tools/event-generator"
+  ],
+  "scripts": {
+    "proto:lint": "buf lint",
+    "proto:generate": "buf generate",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.75.0",
+    "@bufbuild/protoc-gen-es": "^2.16.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

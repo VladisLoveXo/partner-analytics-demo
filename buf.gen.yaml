@@ -1,0 +1,16 @@
+version: v2
+inputs:
+  - directory: proto
+clean: true
+plugins:
+  # Each service gets its own copy of the generated code, so it builds without a shared package.
+  - local: protoc-gen-es
+    out: services/stats-service/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+  - local: protoc-gen-es
+    out: services/partners-api/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
