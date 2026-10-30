@@ -54,9 +54,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     reply.header("x-request-id", request.id);
   });
 
-  // Authentication: every /api route needs a valid bearer token.
+  // Authentication: every /api route needs a valid bearer token. The matched route pattern is checked,
+  // not the raw URL, so a percent-encoded path cannot slip past the prefix test.
   app.addHook("onRequest", async (request) => {
-    if (!request.url.startsWith("/api/")) return;
+    if (!request.routeOptions.url?.startsWith("/api/")) return;
     const header = request.headers.authorization;
     if (header === undefined || !header.startsWith("Bearer ")) throw unauthorized();
     request.principal = await deps.verifyToken(header.slice("Bearer ".length).trim());

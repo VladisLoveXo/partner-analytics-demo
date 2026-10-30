@@ -79,6 +79,11 @@ describe("authentication", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("requires the token on a percent-encoded path too", async () => {
+    const response = await call("GET", "/%61pi/me");
+    expect(response.statusCode).toBe(401);
+  });
+
   it("leaves health endpoints public", async () => {
     expect((await call("GET", "/healthz")).statusCode).toBe(200);
     expect((await call("GET", "/readyz")).statusCode).toBe(200);

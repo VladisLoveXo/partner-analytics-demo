@@ -14,7 +14,7 @@
 | Данные | ClickHouse 26.8 (события и агрегаты), PostgreSQL 18 (реестр партнёров), Redis 7 (лимиты, кеш, ключи идемпотентности) |
 | Вход | Keycloak 26: Authorization Code + PKCE для SPA, client credentials для сервиса, роли partner / admin / ingest |
 | Фронт | React 19, TanStack Router (файловые маршруты, типизированные search params), TanStack Query, Tailwind 4, Recharts |
-| Тесты | Vitest, Testcontainers (ClickHouse, PostgreSQL, Redis), 88 тестов |
+| Тесты | Vitest, Testcontainers (ClickHouse, PostgreSQL, Redis), 89 тестов |
 | Запуск | docker compose; Helm 4 + kind; GitHub Actions ставит чарт в kind на каждый push |
 
 ## Архитектура
@@ -146,7 +146,7 @@ npm test        # нужен запущенный Docker: Testcontainers под�
 | Пакет | Что проверяется |
 |---|---|
 | stats-service (15) | повтор батча не меняет ни сырые данные, ни MV; дубль в другом батче схлопывается в `FINAL`, а MV его считает; `WITH FILL`; изоляция партнёров; gRPC без ключа -> `INVALID_ARGUMENT`; health; переподключение клиента после GOAWAY |
-| partners-api (58) | токены: чужой `iss` / `aud`, истёкший, HS256; изоляция: партнёр на чужого -> 403 без вызова stats-service; админка; приём событий: роль, ключ, 409, 422; rate limit -> 429; кеш, single-flight, fail open; ретраи с тем же ключом, дедлайн без лишних попыток, маппинг кодов gRPC в HTTP |
+| partners-api (59) | токены: чужой `iss` / `aud`, истёкший, HS256, обход через закодированный путь; изоляция: партнёр на чужого -> 403 без вызова stats-service; админка; приём событий: роль, ключ, 409, 422; rate limit -> 429; кеш, single-flight, fail open; ретраи с тем же ключом, дедлайн без лишних попыток, маппинг кодов gRPC в HTTP |
 | web (8), генератор (7) | диапазоны дат в UTC, форматирование; детерминированность истории, валидные UUID v4 |
 
 ## Kubernetes: kind + Helm
